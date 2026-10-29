@@ -1,0 +1,40 @@
+# Valystrum security scan for Google Cloud Build. Copy to cloudbuild-security-scan.yaml in your repository, with
+# valystrum-scan.sh copied to .valystrum/valystrum-scan.sh, and point a pull request trigger and a push trigger for the
+# default branch at it: once a default-branch scan has read a file, it decides that file's findings. Setup and
+# troubleshooting: README.md.
+steps:
+  - id: valystrum-security-scan
+    # bash, git, curl and openssl; the script fetches jq (pinned and checked) because this image has none.
+    name: buildpack-deps:trixie-scm@sha256:494c8cd78eee342bcab52bf7d31d77755aaa770f5d8e668685def8f7b8d34d77
+    env:
+      # Replace acme with your organisation's slug in Valystrum.
+      - VALYSTRUM_SCAN_URL=https://app.valystrum.io/api/v1/acme/pipeline/scan
+      # Your repository's default branch: the branch that decides a finding once it has read the file.
+      - VALYSTRUM_DEFAULT_BRANCH=main
+      - VALYSTRUM_SEND_FILES=true
+      - VALYSTRUM_FAIL_ON_FINDINGS=true
+      - VALYSTRUM_FAIL_ON_ERROR=false
+    secretEnv:
+      - VALYSTRUM_SECRET
+    # Cloud Build's substitutions reach the script as variables (options.automapSubstitutions below). A pull request
+    # trigger names the head and base branches and the pull request; a push trigger names the branch.
+    script: |
+      #!/usr/bin/env bash
+      export VALYSTRUM_REPO="${VALYSTRUM_REPO:-${REPO_FULL_NAME:-}}"
+      export VALYSTRUM_BRANCH="${_HEAD_BRANCH:-${BRANCH_NAME:-}}"
+      export VALYSTRUM_BASE="${_BASE_BRANCH:-}"
+      export VALYSTRUM_COMMIT="${COMMIT_SHA:-}"
+      export VALYSTRUM_PR_NUMBER="${_PR_NUMBER:-}"
+      # Cloud Build numbers no builds, so no run number is sent and the commit's time orders a branch's scans. (The
+      # step's start time would not do: builds run side by side, so an older commit's slower build would count as newer.)
+      exec bash .valystrum/valystrum-scan.sh
+
+availableSecrets:
+  secretManager:
+    # The repository's CI secret, stored in Secret Manager as valystrum-ci-secret.
+    - versionName: projects/$PROJECT_ID/secrets/valystrum-ci-secret/versions/latest
+      env: VALYSTRUM_SECRET
+
+options:
+  automapSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY

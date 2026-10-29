@@ -1,0 +1,35 @@
+# Valystrum SBOM for Google Cloud Build. Copy to cloudbuild-sbom.yaml in your repository, with valystrum-sbom.sh
+# copied to .valystrum/valystrum-sbom.sh, and point a push trigger for the default branch at it (README.md). This one
+# reads an npm project; for Python, Go or Maven use an image with that toolchain and install the dependencies first.
+steps:
+  # The CycloneDX generator reads the INSTALLED dependency tree, not the lockfile alone.
+  - id: install
+    name: node:26.12.1-trixie@sha256:b5f0e27e7423ea242b37af44c8c856e28f7e37d4fac23cb430cb618874ff8517
+    entrypoint: npm
+    args: ["ci", "--ignore-scripts", "--no-audit", "--no-fund"]
+
+  - id: valystrum-sbom
+    name: node:26.12.1-trixie@sha256:b5f0e27e7423ea242b37af44c8c856e28f7e37d4fac23cb430cb618874ff8517
+    env:
+      # Replace acme with your organisation's slug in Valystrum.
+      - VALYSTRUM_INGEST_URL=https://app.valystrum.io/api/v1/acme/sbom/ingest
+      - VALYSTRUM_PATH=.
+      - VALYSTRUM_ECOSYSTEM=auto
+      # This build uploads the whole repository: what it no longer lists is removed in Valystrum. Default branch only;
+      # set it to false if other builds upload parts of the same source.
+      - VALYSTRUM_COMPLETE=true
+    secretEnv:
+      - VALYSTRUM_SECRET
+    script: |
+      #!/usr/bin/env bash
+      export VALYSTRUM_SOURCE="${VALYSTRUM_SOURCE:-${REPO_FULL_NAME:-}}"
+      exec bash .valystrum/valystrum-sbom.sh
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/valystrum-ci-secret/versions/latest
+      env: VALYSTRUM_SECRET
+
+options:
+  automapSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY
